@@ -25,13 +25,13 @@ public class ReindexJob : IJob
         try
         {
             _logger.LogInformation("Starting REINDEX");
-            await _telegramService.SendMessageAsync("🛠️ <b>Starting REINDEX of database tables</b>");
+            await _telegramService.SendMessageAsync("🛠️ <b>Starting REINDEX of database tables</b>\n#dbmaintenance");
 
             var stats = await _databaseService.ReindexTablesAsync();
             
             if (stats.TablesProcessed == 0)
             {
-                await _telegramService.EditMessageAsync("🟢 <b>No tables require reindexing</b>");
+                await _telegramService.EditMessageAsync("🟢 <b>No tables require reindexing</b>\n#dbmaintenance");
                 _logger.LogInformation("No tables require reindexing");
                 return;
             }
@@ -54,13 +54,14 @@ public class ReindexJob : IJob
                 message.AppendLine($"{table.TableName.PadRight(12)} {table.Duration.TotalSeconds:F2} sec");
             }
             message.AppendLine("</pre>");
+            message.AppendLine("\n#dbmaintenance");
 
             await _telegramService.EditMessageAsync(message.ToString());
             _logger.LogInformation("REINDEX completed successfully");
         }
         catch (Exception ex)
         {
-            var errorMessage = $"❌ <b>REINDEX Error:</b>\n<code>{ex.Message}</code>";
+            var errorMessage = $"❌ <b>REINDEX Error:</b>\n<code>{ex.Message}</code>\n#dbmaintenance";
             await _telegramService.EditMessageAsync(errorMessage);
             _logger.LogError(ex, "Error during REINDEX execution");
             throw;

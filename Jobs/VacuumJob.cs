@@ -25,13 +25,13 @@ public class VacuumJob : IJob
         try
         {
             _logger.LogInformation("Starting VACUUM");
-            await _telegramService.SendMessageAsync("⚒️ <b>Starting database maintenance</b>");
+            await _telegramService.SendMessageAsync("⚒️ <b>Starting database maintenance</b>\n#dbmaintenance");
 
             var stats = await _databaseService.VacuumTablesAsync();
             
             if (stats.TablesProcessed == 0)
             {
-                await _telegramService.EditMessageAsync("🟢 <b>No tables require maintenance</b>");
+                await _telegramService.EditMessageAsync("🟢 <b>No tables require maintenance</b>\n#dbmaintenance");
                 _logger.LogInformation("No tables require maintenance");
                 return;
             }
@@ -55,13 +55,14 @@ public class VacuumJob : IJob
                 message.AppendLine($"{table.TableName.PadRight(12)} {FormatSize(table.SizeBefore).PadLeft(8)} {FormatSize(table.SizeAfter).PadLeft(8)} {FormatSize(table.SpaceFreed).PadLeft(10)}");
             }
             message.AppendLine("</pre>");
+            message.AppendLine("\n#dbmaintenance");
 
             await _telegramService.EditMessageAsync(message.ToString());
             _logger.LogInformation("VACUUM completed successfully");
         }
         catch (Exception ex)
         {
-            var errorMessage = $"❌ <b>Maintenance Error:</b>\n<code>{ex.Message}</code>";
+            var errorMessage = $"❌ <b>Maintenance Error:</b>\n<code>{ex.Message}</code>\n#dbmaintenance";
             await _telegramService.EditMessageAsync(errorMessage);
             _logger.LogError(ex, "Error during VACUUM execution");
             throw;

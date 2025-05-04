@@ -228,6 +228,83 @@ public class DatabaseService
         );
         return (long)(await cmd.ExecuteScalarAsync() ?? 0L);
     }
+
+    /// <summary>
+    /// Получить размер таблицы public.waypoint в байтах
+    /// </summary>
+    public async Task<long> GetWaypointTableSizeAsync()
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT pg_table_size('public.waypoint')", conn);
+        return (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+    }
+
+    /// <summary>
+    /// Получить количество строк в таблице public.waypoint
+    /// </summary>
+    public async Task<long> GetWaypointTableRowCountAsync()
+    {
+        var settings = _maintenanceSettings.Value.WaypointCleanup;
+        var retentionDate = DateTime.UtcNow.AddMonths(-settings.RetentionMonths);
+        var deleteWithOrderId = settings.DeleteWithOrderId;
+
+        var sql = """
+            SELECT COUNT(*)
+            FROM public.waypoint
+            WHERE datetimeutc < @retentionDate
+            """;
+
+        if (!deleteWithOrderId)
+        {
+            sql += " AND orderid IS NULL";
+        }
+
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@retentionDate", retentionDate);
+
+        var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+        _logger.LogInformation("Found {Count} rows in waypoint table (older than {Date}, with order: {WithOrder})", 
+            count, retentionDate, deleteWithOrderId);
+        return count;
+    }
+
+    /// <summary>
+    /// Удалить батч строк старше N месяцев из public.waypoint, вернуть количество удалённых
+    /// </summary>
+    public async Task<int> DeleteOldWaypointsBatchAsync()
+    {
+        var deleteWithOrderId = _maintenanceSettings.Value.WaypointCleanup.DeleteWithOrderId;
+        var retentionMonths = _maintenanceSettings.Value.WaypointCleanup.RetentionMonths;
+        var batchSize = _maintenanceSettings.Value.WaypointCleanup.BatchSize;
+        
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync();
+
+        var where = $"datetimeutc < NOW() - INTERVAL '{retentionMonths} months'";
+        if (!deleteWithOrderId)
+            where += " AND orderid IS NULL";
+
+        var sql = $@"
+            WITH del AS (
+                SELECT id FROM public.waypoint
+                WHERE {where}
+                LIMIT @batchSize
+            )
+            DELETE FROM public.waypoint WHERE id IN (SELECT id FROM del)
+            RETURNING id;
+        ";
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("batchSize", batchSize);
+
+        var count = 0;
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) count++;
+        return count;
+    }
 }
 
 public class MaintenanceStats

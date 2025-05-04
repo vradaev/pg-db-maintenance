@@ -54,6 +54,7 @@ try
             // Регистрация заданий
             services.AddTransient<VacuumJob>();
             services.AddTransient<ReindexJob>();
+            services.AddTransient<WaypointCleanupJob>();
         })
         .Build();
 

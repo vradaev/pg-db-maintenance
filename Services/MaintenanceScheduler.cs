@@ -34,35 +34,74 @@ public class MaintenanceScheduler : IHostedService
         await _scheduler.Start(cancellationToken);
 
         // Настройка задачи для вакуума
-        var vacuumJob = JobBuilder.Create<VacuumJob>()
-            .WithIdentity("vacuumJob", "maintenance")
-            .Build();
+        if (_maintenanceSettings.Value.VacuumTables.Enabled)
+        {
+            var vacuumJob = JobBuilder.Create<VacuumJob>()
+                .WithIdentity("vacuumJob", "maintenance")
+                .Build();
 
-        var vacuumTrigger = TriggerBuilder.Create()
-            .WithIdentity("vacuumTrigger", "maintenance")
-            .WithCronSchedule(_maintenanceSettings.Value.VacuumTables.Schedule)
-            .Build();
+            var vacuumTrigger = TriggerBuilder.Create()
+                .WithIdentity("vacuumTrigger", "maintenance")
+                .WithCronSchedule(_maintenanceSettings.Value.VacuumTables.Schedule)
+                .Build();
+
+            await _scheduler.ScheduleJob(vacuumJob, vacuumTrigger, cancellationToken);
+            _logger.LogInformation("Vacuum job scheduled");
+            _logger.LogInformation("Next vacuum run: {NextRun}", await _scheduler.GetTrigger(vacuumTrigger.Key, cancellationToken));
+        }
+        else
+        {
+            _logger.LogInformation("Vacuum job is disabled");
+        }
 
         // Настройка задачи для реиндексации
-        var reindexJob = JobBuilder.Create<ReindexJob>()
-            .WithIdentity("reindexJob", "maintenance")
-            .Build();
+        if (_maintenanceSettings.Value.Reindex.Enabled)
+        {
+            var reindexJob = JobBuilder.Create<ReindexJob>()
+                .WithIdentity("reindexJob", "maintenance")
+                .Build();
 
-        var reindexTrigger = TriggerBuilder.Create()
-            .WithIdentity("reindexTrigger", "maintenance")
-            .WithCronSchedule(_maintenanceSettings.Value.Reindex.Schedule)
-            .Build();
+            var reindexTrigger = TriggerBuilder.Create()
+                .WithIdentity("reindexTrigger", "maintenance")
+                .WithCronSchedule(_maintenanceSettings.Value.Reindex.Schedule)
+                .Build();
+
+            await _scheduler.ScheduleJob(reindexJob, reindexTrigger, cancellationToken);
+            _logger.LogInformation("Reindex job scheduled");
+            _logger.LogInformation("Next reindex run: {NextRun}", await _scheduler.GetTrigger(reindexTrigger.Key, cancellationToken));
+        }
+        else
+        {
+            _logger.LogInformation("Reindex job is disabled");
+        }
+
+        // Настройка задачи для очистки waypoint
+        if (_maintenanceSettings.Value.WaypointCleanup.Enabled)
+        {
+            var cleanupJob = JobBuilder.Create<WaypointCleanupJob>()
+                .WithIdentity("cleanupJob", "maintenance")
+                .Build();
+
+            var cleanupTrigger = TriggerBuilder.Create()
+                .WithIdentity("cleanupTrigger", "maintenance")
+                .WithCronSchedule(_maintenanceSettings.Value.WaypointCleanup.Schedule)
+                .UsingJobData("startTime", _maintenanceSettings.Value.WaypointCleanup.StartTime)
+                .UsingJobData("endTime", _maintenanceSettings.Value.WaypointCleanup.EndTime)
+                .Build();
+
+            await _scheduler.ScheduleJob(cleanupJob, cleanupTrigger, cancellationToken);
+            _logger.LogInformation("Cleanup job scheduled");
+            _logger.LogInformation("Next cleanup run: {NextRun}", await _scheduler.GetTrigger(cleanupTrigger.Key, cancellationToken));
+        }
+        else
+        {
+            _logger.LogInformation("Cleanup job is disabled");
+        }
 
         // Добавляем обработчики ошибок
         _scheduler.ListenerManager.AddJobListener(new JobErrorHandler(_logger));
         _scheduler.ListenerManager.AddTriggerListener(new TriggerErrorHandler(_logger));
-
-        await _scheduler.ScheduleJob(vacuumJob, vacuumTrigger, cancellationToken);
-        await _scheduler.ScheduleJob(reindexJob, reindexTrigger, cancellationToken);
-
-        _logger.LogInformation("Jobs scheduled successfully");
-        _logger.LogInformation("Next vacuum run: {NextRun}", await _scheduler.GetTrigger(vacuumTrigger.Key, cancellationToken));
-        _logger.LogInformation("Next reindex run: {NextRun}", await _scheduler.GetTrigger(reindexTrigger.Key, cancellationToken));
+        _scheduler.ListenerManager.AddTriggerListener(new TimeCheckTriggerListener(_logger));
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -130,6 +169,51 @@ public class TriggerErrorHandler : ITriggerListener
     public Task TriggerMisfired(ITrigger trigger, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Триггер {TriggerName} пропущен", trigger.Key.Name);
+        return Task.CompletedTask;
+    }
+
+    public Task TriggerComplete(ITrigger trigger, IJobExecutionContext context, SchedulerInstruction triggerInstructionCode, CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+}
+
+public class TimeCheckTriggerListener : ITriggerListener
+{
+    private readonly ILogger<MaintenanceScheduler> _logger;
+
+    public TimeCheckTriggerListener(ILogger<MaintenanceScheduler> logger)
+    {
+        _logger = logger;
+    }
+
+    public string Name => "TimeCheckTriggerListener";
+
+    public Task TriggerFired(ITrigger trigger, IJobExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> VetoJobExecution(ITrigger trigger, IJobExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        if (trigger.JobKey.Name == "cleanupJob")
+        {
+            var startTime = TimeSpan.Parse(trigger.JobDataMap.GetString("startTime") ?? "01:00");
+            var endTime = TimeSpan.Parse(trigger.JobDataMap.GetString("endTime") ?? "05:00");
+            var currentTime = DateTime.UtcNow.TimeOfDay;
+
+            if (currentTime < startTime || currentTime >= endTime)
+            {
+                _logger.LogInformation("Skipping cleanup job: current time {CurrentTime} is outside allowed interval {StartTime}-{EndTime}", 
+                    currentTime, startTime, endTime);
+                return Task.FromResult(true);
+            }
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task TriggerMisfired(ITrigger trigger, CancellationToken cancellationToken = default)
+    {
         return Task.CompletedTask;
     }
 

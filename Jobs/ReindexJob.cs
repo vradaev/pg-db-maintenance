@@ -25,7 +25,7 @@ public class ReindexJob : IJob
         try
         {
             _logger.LogInformation("Starting REINDEX");
-            await _telegramService.SendMessageAsync("🛠️ <b>Starting REINDEX of database tables</b>\n#dbmaintenance");
+            await _telegramService.SendMessageAsync("🛠 ️<b>Starting REINDEX of database tables</b>\n#dbmaintenance");
 
             var stats = await _databaseService.ReindexTablesAsync();
             
@@ -37,7 +37,7 @@ public class ReindexJob : IJob
             }
 
             var message = new System.Text.StringBuilder();
-            message.AppendLine("📊 <b>REINDEX Completed</b>");
+            message.AppendLine("📊 <b>REINDEX Database Report</b>");
             message.AppendLine();
             message.AppendLine("📈 <b>Summary</b>");
             message.AppendLine($"• Tables: <code>{stats.TablesProcessed}</code>");
@@ -54,14 +54,14 @@ public class ReindexJob : IJob
                 message.AppendLine($"{table.TableName.PadRight(12)} {table.Duration.TotalSeconds:F2} sec");
             }
             message.AppendLine("</pre>");
-            message.AppendLine("\n#dbmaintenance");
+            message.AppendLine("\n#reindex_maintenance");
 
             await _telegramService.EditMessageAsync(message.ToString());
             _logger.LogInformation("REINDEX completed successfully");
         }
         catch (Exception ex)
         {
-            var errorMessage = $"❌ <b>REINDEX Error:</b>\n<code>{ex.Message}</code>\n#dbmaintenance";
+            var errorMessage = $"❌ <b>REINDEX Error:</b>\n<code>{ex.Message}</code>\n#reindex_maintenance";
             await _telegramService.EditMessageAsync(errorMessage);
             _logger.LogError(ex, "Error during REINDEX execution");
             throw;

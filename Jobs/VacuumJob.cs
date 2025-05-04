@@ -37,7 +37,7 @@ public class VacuumJob : IJob
             }
 
             var message = new System.Text.StringBuilder();
-            message.AppendLine("📊 <b>Maintenance Report</b>");
+            message.AppendLine("📊 <b>Database Maintenance Report</b>");
             message.AppendLine();
             message.AppendLine("📈 <b>Summary</b>");
             message.AppendLine($"• Tables: <code>{stats.TablesProcessed}</code>");
@@ -55,14 +55,14 @@ public class VacuumJob : IJob
                 message.AppendLine($"{table.TableName.PadRight(12)} {FormatSize(table.SizeBefore).PadLeft(8)} {FormatSize(table.SizeAfter).PadLeft(8)} {FormatSize(table.SpaceFreed).PadLeft(10)}");
             }
             message.AppendLine("</pre>");
-            message.AppendLine("\n#dbmaintenance");
+            message.AppendLine("\n#vacuum_maintenance");
 
             await _telegramService.EditMessageAsync(message.ToString());
             _logger.LogInformation("VACUUM completed successfully");
         }
         catch (Exception ex)
         {
-            var errorMessage = $"❌ <b>Maintenance Error:</b>\n<code>{ex.Message}</code>\n#dbmaintenance";
+            var errorMessage = $"❌ <b>Maintenance Error:</b>\n<code>{ex.Message}</code>\n#vacuum_maintenance";
             await _telegramService.EditMessageAsync(errorMessage);
             _logger.LogError(ex, "Error during VACUUM execution");
             throw;

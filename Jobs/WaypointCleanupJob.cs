@@ -74,7 +74,6 @@ public class WaypointCleanupJob : IJob
             message.AppendLine("--------------------------------------------");
             message.AppendLine($"{FormatNumber(rowsBefore).PadLeft(12)} {FormatNumber(rowsAfter).PadLeft(10)} {FormatNumber(totalDeleted).PadLeft(10)}");
             message.AppendLine("</pre>");
-            message.AppendLine();
             message.AppendLine("\n#waypoint_cleanup");
 
             await _telegramService.EditMessageAsync(message.ToString());
